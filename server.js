@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { Client } = require("@gradio/client");
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
@@ -13,13 +14,30 @@ const upload = multer({ dest: 'uploads/' });
 app.use(express.static(path.join(__dirname)));
 // Load environment variables
 require('dotenv').config();
-
+const requiredEnvVars = [
+    "GOOGLE_AI_STUDIO_TOKEN",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_GATEWAY_ID",
+];
+const missingEnvVars = requiredEnvVars.filter(
+    (name) => !process.env[name] || process.env[name].trim() === "",
+);
+if (missingEnvVars.length > 0) {
+    throw new Error(
+        `Missing environment variables: ${missingEnvVars.join(
+            ", ",
+        )}. Set them in a .env file or your shell environment.`,
+    );
+}
 // R2 details
 const R2_ENDPOINT = process.env.R2_ENDPOINT;
 const R2_BUCKET = process.env.R2_BUCKET;
 const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY;
 const R2_SECRET_KEY = process.env.R2_SECRET_KEY;
 const baseURL = process.env.BASE_URL;
+const api_token = process.env.GOOGLE_AI_STUDIO_TOKEN;
+const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+const gatewayId = process.env.CLOUDFLARE_GATEWAY_ID;
 // Initialize S3 Client
 const S3 = new S3Client({
     // Cloudflare R2 requires the endpoint to include the hostname
@@ -95,11 +113,77 @@ app.post('/predict', express.json(), async (req, res) => {
                 custom_color: "",
             }
         );
-        
+
         res.status(200).json(result);
     } catch (error) {
         console.error('Prediction error:', error);
         res.status(500).json({ error: 'Error during prediction' });
+    }
+});
+
+
+// Endpoint to handle image tagging
+app.post('/tagger', express.json(), async (req, res) => {
+    const { imageUrl } = req.body;
+
+    try {
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch image: ${response.status}`);
+        }
+
+        // Convert image to base64 for Gemini
+        const imageBuffer = await response.arrayBuffer();
+        const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+        
+        // Get image MIME type
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+        
+        const genAI = new GoogleGenerativeAI(api_token);
+        const model = genAI.getGenerativeModel(
+            { model: "gemini-2.5-flash" },
+            {
+                baseUrl: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/google-ai-studio`,
+            },
+        );
+
+        // Create content with both text and image
+        const content = [
+            {
+                text: "Tag the objects in this image. Output only a JSON array of strings, like: [\"air\",\"door\",\"dog\"]. Do not include any other text or explanation."
+            },
+            {
+                inlineData: {
+                    data: imageBase64,
+                    mimeType: contentType
+                }
+            }
+        ];
+
+        const result = await model.generateContent(content);
+        const response_text = result.response.text();
+        
+        // Try to parse the JSON response
+        let tags = [];
+        try {
+            // Clean the response text (remove markdown formatting if present)
+            const cleanText = response_text.replace(/```json\n?|\n?```/g, '').trim();
+            tags = JSON.parse(cleanText);
+        } catch (parseError) {
+            console.error('Failed to parse tags JSON:', parseError);
+            console.log('Raw response:', response_text);
+            // Fallback: try to extract tags from text
+            tags = response_text.match(/\[(.*?)\]/)?.[1]?.split(',').map(tag => tag.trim().replace(/"/g, '')) || [];
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            tags: tags,
+            rawResponse: response_text 
+        });
+    } catch (error) {
+        console.error('Tagger error:', error);
+        res.status(500).json({ error: 'Error during tagging', details: error.message });
     }
 });
 
