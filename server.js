@@ -4,7 +4,8 @@ const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-const { Client } = require("@gradio/client");
+// Dynamic import for ES Module
+let Client;
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
@@ -18,6 +19,7 @@ const requiredEnvVars = [
     "GOOGLE_AI_STUDIO_TOKEN",
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_GATEWAY_ID",
+    "BACKEND_URL",
 ];
 const missingEnvVars = requiredEnvVars.filter(
     (name) => !process.env[name] || process.env[name].trim() === "",
@@ -85,39 +87,115 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     }
 });
 const backendUrl = process.env.BACKEND_URL;
+
+// Validate backend URL format
+if (backendUrl && !backendUrl.startsWith('http')) {
+    console.warn('Warning: BACKEND_URL should start with http:// or https://');
+}
+
+// Health check endpoint for backend connectivity
+app.get('/health', async (req, res) => {
+    if (!backendUrl) {
+        return res.status(503).json({ 
+            status: 'unhealthy', 
+            error: 'Backend URL not configured' 
+        });
+    }
+    
+    try {
+        // Dynamic import for ES Module
+        if (!Client) {
+            const { Client: GradioClient } = await import("@gradio/client");
+            Client = GradioClient;
+        }
+        
+        const app = await Client.connect(backendUrl);
+        res.status(200).json({ 
+            status: 'healthy', 
+            backendUrl: backendUrl,
+            message: 'Backend is accessible'
+        });
+    } catch (error) {
+        console.error('Health check failed:', error);
+        res.status(503).json({ 
+            status: 'unhealthy', 
+            backendUrl: backendUrl,
+            error: error.message,
+            details: 'Backend service is not accessible'
+        });
+    }
+});
+
 // Endpoint to handle prediction
 app.post('/predict', express.json(), async (req, res) => {
     const { imageUrl, categories } = req.body;
 
     try {
+        // Validate required fields
+        if (!imageUrl) {
+            return res.status(400).json({ error: 'imageUrl is required' });
+        }
+        
+        if (!backendUrl) {
+            return res.status(500).json({ error: 'Backend URL not configured' });
+        }
+
         const response = await fetch(imageUrl);
         if (!response.ok) {
             throw new Error(`Failed to fetch image: ${response.status}`);
         }
         const fetchedImage = await response.blob();
 
-        const app = await Client.connect(backendUrl);
-        const result = await app.predict(
-            "/run_inference_wrapper",
-            {
-                input_image: fetchedImage,
-                visual_prompter_data: null,
-                task_selection: "Pointing",
-                categories: categories,
-                keypoint_type: "person",
-                ocr_output_format: "Box",
-                ocr_granularity: "Word Level",
-                font_size: 20,
-                draw_width: 5,
-                show_labels: true,
-                custom_color: "",
-            }
-        );
+        // Dynamic import for ES Module
+        if (!Client) {
+            const { Client: GradioClient } = await import("@gradio/client");
+            Client = GradioClient;
+        }
+        
+        // Test backend URL connectivity first
+        try {
+            const app = await Client.connect(backendUrl);
+            const result = await app.predict(
+                "/run_inference_wrapper",
+                {
+                    input_image: fetchedImage,
+                    visual_prompter_data: null,
+                    task_selection: "Pointing",
+                    categories: categories,
+                    keypoint_type: "person",
+                    ocr_output_format: "Box",
+                    ocr_granularity: "Word Level",
+                    font_size: 20,
+                    draw_width: 5,
+                    show_labels: true,
+                    custom_color: "",
+                }
+            );
 
-        res.status(200).json(result);
+            res.status(200).json(result);
+        } catch (gradioError) {
+            console.error('Gradio connection error:', gradioError);
+            if (gradioError.message.includes('Space metadata could not be loaded')) {
+                res.status(503).json({ 
+                    error: 'Backend service unavailable', 
+                    details: 'The Gradio backend is not accessible. Please check if the backend URL is correct and the service is running.',
+                    backendUrl: backendUrl,
+                    suggestion: 'Try visiting /health endpoint to check backend connectivity'
+                });
+            } else {
+                res.status(503).json({ 
+                    error: 'Gradio connection failed', 
+                    details: gradioError.message,
+                    backendUrl: backendUrl
+                });
+            }
+        }
     } catch (error) {
         console.error('Prediction error:', error);
-        res.status(500).json({ error: 'Error during prediction' });
+        res.status(500).json({ 
+            error: 'Error during prediction', 
+            details: error.message 
+        });
     }
 });
 
@@ -125,16 +203,21 @@ app.post('/predict', express.json(), async (req, res) => {
 // Endpoint to handle image tagging
 app.post('/tagger', express.json(), async (req, res) => {
     const { imageUrl } = req.body;
-
+    let imageBase64;
+    let response;
     try {
-        const response = await fetch(imageUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch image: ${response.status}`);
+        try {
+            response = await fetch(imageUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch image: ${response.status}`);
+            }
+    
+            // Convert image to base64 for Gemini
+            const imageBuffer = await response.arrayBuffer();
+            imageBase64 = Buffer.from(imageBuffer).toString('base64');
+        } catch (e) {
+            console.error('fetch image error', e);
         }
-
-        // Convert image to base64 for Gemini
-        const imageBuffer = await response.arrayBuffer();
-        const imageBase64 = Buffer.from(imageBuffer).toString('base64');
         
         // Get image MIME type
         const contentType = response.headers.get('content-type') || 'image/jpeg';
@@ -162,7 +245,6 @@ app.post('/tagger', express.json(), async (req, res) => {
 
         const result = await model.generateContent(content);
         const response_text = result.response.text();
-        
         // Try to parse the JSON response
         let tags = [];
         try {
