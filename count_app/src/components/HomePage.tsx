@@ -1,27 +1,52 @@
 import { useRef, useState } from 'react';
-import { Upload, History, Zap } from 'lucide-react';
+import { Upload, History, Zap, LogIn, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 import { UserTier, ProcessedImage } from '../App';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { uploadImage } from '../services/api';
 import { UserMenu } from './UserMenu';
+import { useAuth } from '@clerk/clerk-react';
 
 type HomePageProps = {
   onImageUpload: (imageUrl: string) => void;
   onNavigateHistory: () => void;
+  onNavigateAuth: () => void;
+  onNavigateProfile: () => void;
   userTier: UserTier;
   dailyCount: number;
+  isSignedIn: boolean;
+  freeLimit: number;
 };
 
-export function HomePage({ onImageUpload, onNavigateHistory, userTier, dailyCount }: HomePageProps) {
+export function HomePage({ onImageUpload, onNavigateHistory, onNavigateAuth, onNavigateProfile, userTier, dailyCount, isSignedIn, freeLimit }: HomePageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [showSignOutDialog, setShowSignOutDialog] = useState(false);
+  const { signOut } = useAuth();
   const history: ProcessedImage[] = JSON.parse(localStorage.getItem('countHistory') || '[]');
   const recentImages = history.slice(0, 3);
-  const freeLimit = 5;
+
+  const handleSignOutClick = () => {
+    setShowSignOutDialog(true);
+  };
+
+  const handleSignOutConfirm = async () => {
+    setShowSignOutDialog(false);
+    await signOut();
+  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -64,15 +89,38 @@ export function HomePage({ onImageUpload, onNavigateHistory, userTier, dailyCoun
             </div>
             <h1 className="text-xl">AI Count</h1>
           </div>
-          {userTier === 'free' && (
-            <Badge variant="outline" className="border-[#4D8FFF] text-[#4D8FFF]">
-              Free {dailyCount}/{freeLimit}
-            </Badge>
-          )}
-          {userTier === 'pro' && (
-            <Badge className="bg-[#4D8FFF]">Pro</Badge>
-          )}
-          <UserMenu />
+          <div className="flex items-center gap-3">
+            {userTier === 'free' && (
+              <Badge variant="outline" className="border-[#4D8FFF] text-[#4D8FFF]">
+                {isSignedIn ? 'Free' : 'Guest'} {dailyCount}/{freeLimit}
+              </Badge>
+            )}
+            {userTier === 'pro' && (
+              <Badge className="bg-[#4D8FFF]">Pro</Badge>
+            )}
+            {isSignedIn ? (
+              <>
+                <Button
+                  onClick={handleSignOutClick}
+                  variant="outline"
+                  className="border-[#F44336] text-[#F44336] hover:bg-[#F44336] hover:border-[#F44336] cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sign Out
+                </Button>
+                <UserMenu onNavigateProfile={onNavigateProfile} />
+              </>
+            ) : (
+              <Button
+                onClick={onNavigateAuth}
+                variant="outline"
+                className="border-[#4D8FFF] text-[#4D8FFF] hover:bg-[#4D8FFF] hover:text-white"
+              >
+                <LogIn className="w-4 h-4 mr-2" />
+                Sign In
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -83,7 +131,19 @@ export function HomePage({ onImageUpload, onNavigateHistory, userTier, dailyCoun
           {userTier === 'free' && dailyCount >= freeLimit && (
             <Alert className="bg-[#1F1F1F] border-[#F44336]">
               <AlertDescription className="text-[#F44336]">
-                You've reached your daily limit of {freeLimit} counts. Upgrade to Pro for unlimited counts!
+                {isSignedIn 
+                  ? `You've reached your daily limit of ${freeLimit} counts. Upgrade to Pro for unlimited counts!`
+                  : `You've reached your daily limit of ${freeLimit} counts. Please sign in to continue or upgrade to Pro for unlimited counts!`
+                }
+                {!isSignedIn && (
+                  <Button
+                    onClick={onNavigateAuth}
+                    className="ml-4 bg-[#4D8FFF] hover:bg-[#3D7FEF]"
+                    size="sm"
+                  >
+                    Sign In
+                  </Button>
+                )}
               </AlertDescription>
             </Alert>
           )}
@@ -177,6 +237,29 @@ export function HomePage({ onImageUpload, onNavigateHistory, userTier, dailyCoun
           </Button>
         </div>
       </nav>
+
+      {/* Sign Out Confirmation Dialog */}
+      <AlertDialog open={showSignOutDialog} onOpenChange={setShowSignOutDialog}>
+        <AlertDialogContent className="bg-[#1F1F1F] border-[#2F2F2F] text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Sign Out</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#E0E0E0]">
+              Are you sure you want to sign out? You will need to sign in again to access your account.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-[#2F2F2F] border-[#3F3F3F] text-white hover:bg-[#3F3F3F]">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSignOutConfirm}
+              className="bg-[#F44336] hover:bg-[#D32F2F] text-white"
+            >
+              Sign Out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

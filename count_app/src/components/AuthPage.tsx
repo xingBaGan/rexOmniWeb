@@ -1,12 +1,20 @@
-import { SignIn, SignUp } from "@clerk/clerk-react";
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { SignIn, SignUp, useAuth } from "@clerk/clerk-react";
 
 type AuthPageProps = {
   mode?: "sign-in" | "sign-up";
+  onLoginSuccess?: () => void;
 };
 
-export function AuthPage({ mode: initialMode = "sign-in" }: AuthPageProps) {
+export function AuthPage({ mode: initialMode = "sign-in", onLoginSuccess }: AuthPageProps) {
   const [mode, setMode] = useState<"sign-in" | "sign-up">(initialMode);
+  const { isSignedIn } = useAuth();
+
+  useEffect(() => {
+    if (isSignedIn && onLoginSuccess) {
+      onLoginSuccess();
+    }
+  }, [isSignedIn, onLoginSuccess]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#121212] p-4">

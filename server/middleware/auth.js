@@ -19,7 +19,26 @@ const authenticate = async (req, res, next) => {
         }
 
         req.clerkId = session.sub;
-        req.userEmail = session.email || session.email_addresses?.[0]?.email_address;
+        
+        // Try to get email from session first
+        let email = session.email || session.email_addresses?.[0]?.email_address;
+        
+        // If email is not in session, fetch user from Clerk API
+        if (!email && session.sub) {
+            try {
+                const clerkUser = await clerkClient.users.getUser(session.sub);
+                email = clerkUser.emailAddresses?.[0]?.emailAddress || 
+                        clerkUser.primaryEmailAddress?.emailAddress;
+            } catch (error) {
+                console.error("Failed to fetch user from Clerk:", error);
+            }
+        }
+        
+        if (!email) {
+            return res.status(400).json({ error: "User email not found" });
+        }
+        
+        req.userEmail = email;
         next();
     } catch (error) {
         console.error("Authentication error:", error);

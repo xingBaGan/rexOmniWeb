@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth, useUser } from "@clerk/clerk-react";
 import { HomePage } from "./components/HomePage";
 import { ProcessingPage } from "./components/ProcessingPage";
@@ -6,6 +6,7 @@ import { ResultPage } from "./components/ResultPage";
 import { HistoryPage } from "./components/HistoryPage";
 import { AuthPage } from "./components/AuthPage";
 import { PaymentCallback } from "./components/PaymentCallback";
+import { UserProfilePage } from "./components/UserProfilePage";
 import { Toaster } from "./components/ui/sonner";
 import { getCurrentUser, updateDailyCount } from "./services/auth";
 import { toast } from "sonner";
@@ -32,14 +33,15 @@ export type UserTier = "free" | "pro";
 export default function App() {
   const { isSignedIn, getToken, isLoaded } = useAuth();
   const { user: clerkUser } = useUser();
-  const [currentPage, setCurrentPage] = useState<"home" | "processing" | "result" | "history">("home");
+  const [currentPage, setCurrentPage] = useState<"home" | "processing" | "result" | "history" | "auth" | "profile">("home");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [processedResult, setProcessedResult] = useState<ProcessedImage | null>(null);
   const [userTier, setUserTier] = useState<UserTier>("free");
   const [dailyCount, setDailyCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const freeLimit = 5;
 
-  // Load user data from backend
+  // Load user data from backend or localStorage
   useEffect(() => {
     const loadUserData = async () => {
       if (!isLoaded) {
@@ -47,10 +49,24 @@ export default function App() {
       }
 
       if (!isSignedIn) {
+        // For guest users, use localStorage
+        const savedCount = localStorage.getItem("guestDailyCount");
+        const savedDate = localStorage.getItem("guestDailyCountDate");
+        const today = new Date().toDateString();
+
+        if (savedDate === today && savedCount) {
+          setDailyCount(parseInt(savedCount));
+        } else {
+          setDailyCount(0);
+          localStorage.setItem("guestDailyCountDate", today);
+          localStorage.setItem("guestDailyCount", "0");
+        }
+        setUserTier("free");
         setLoading(false);
         return;
       }
 
+      // For signed-in users, load from backend
       try {
         const token = await getToken();
         if (token) {
@@ -78,8 +94,9 @@ export default function App() {
     setProcessedResult(result);
     setCurrentPage("result");
 
-    // Update daily count on backend
+    // Update daily count
     if (isSignedIn) {
+      // For signed-in users, update on backend
       try {
         const token = await getToken();
         if (token) {
@@ -89,9 +106,14 @@ export default function App() {
       } catch (error) {
         console.error("Failed to update count:", error);
       }
+    } else {
+      // For guest users, update localStorage
+      const newCount = dailyCount + 1;
+      setDailyCount(newCount);
+      localStorage.setItem("guestDailyCount", newCount.toString());
     }
 
-    // Save to history (still using localStorage for now)
+    // Save to history
     const history = JSON.parse(localStorage.getItem("countHistory") || "[]");
     history.unshift(result);
     localStorage.setItem("countHistory", JSON.stringify(history.slice(0, 50)));
@@ -110,6 +132,21 @@ export default function App() {
       } catch (error) {
         console.error("Failed to refresh user data:", error);
       }
+    }
+  };
+
+  const handleLoginSuccess = async () => {
+    // After login, load user data and refresh
+    try {
+      const token = await getToken();
+      if (token) {
+        const userData = await getCurrentUser(token);
+        setUserTier(userData.tier);
+        setDailyCount(userData.dailyCount || 0);
+        setCurrentPage("home");
+      }
+    } catch (error) {
+      console.error("Failed to load user data after login:", error);
     }
   };
 
@@ -147,14 +184,14 @@ export default function App() {
     );
   }
 
-  // Show auth page if not signed in
-  if (!isSignedIn) {
-    return <AuthPage mode="sign-in" />;
-  }
-
   // Show payment callback page if this is a payment callback
   if (isPaymentCallback) {
     return <PaymentCallback onComplete={handlePaymentCallbackComplete} />;
+  }
+
+  // Show auth page if navigating to auth
+  if (currentPage === "auth") {
+    return <AuthPage mode="sign-in" onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
@@ -163,8 +200,12 @@ export default function App() {
         <HomePage
           onImageUpload={handleImageUpload}
           onNavigateHistory={() => setCurrentPage("history")}
+          onNavigateAuth={() => setCurrentPage("auth")}
+          onNavigateProfile={() => setCurrentPage("profile")}
           userTier={userTier}
           dailyCount={dailyCount}
+          isSignedIn={isSignedIn}
+          freeLimit={freeLimit}
         />
       )}
       {currentPage === "processing" && selectedImage && (
@@ -191,6 +232,9 @@ export default function App() {
           }}
           userTier={userTier}
         />
+      )}
+      {currentPage === "profile" && (
+        <UserProfilePage onBack={() => setCurrentPage("home")} />
       )}
       <Toaster theme="dark" />
     </div>

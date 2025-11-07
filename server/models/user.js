@@ -52,7 +52,9 @@ const User = mongoose.model("User", userSchema);
  */
 const findOrCreateUser = async (clerkId, email) => {
     let user = await User.findOne({ clerkId });
-    
+    if (!email) {
+        throw new Error("Email is required to create user");
+    }
     if (!user) {
         user = new User({
             clerkId,
