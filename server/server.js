@@ -10,7 +10,9 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // Database and authentication
 const connectDB = require('./config/database');
-const { findOrCreateUser, findUserByClerkId, updateSubscription, updateDailyCount, getDailyCount } = require('./models/user');
+const { findOrCreateUser, findUserByClerkId, updateSubscription, updateDailyCount, getDailyCount, mergeGuestDailyCount } = require('./models/user');
+const { saveHistory, getUserHistory, deleteHistory, migrateGuestHistoryToUser } = require('./models/history');
+const { findOrCreateGuest, updateGuestDailyCount, getGuestDailyCount, getGuestData, deleteGuest } = require('./models/guest');
 const { authenticate } = require('./middleware/auth');
 const { createCheckoutSession, getSubscription, cancelSubscription } = require('./services/payment');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -340,6 +342,266 @@ app.post('/api/user/update-count', authenticate, async (req, res) => {
     } catch (error) {
         console.error('Update count error:', error);
         res.status(500).json({ error: 'Failed to update count' });
+    }
+});
+
+// ==================== Guest User APIs ====================
+
+// Get or create guest session
+app.get('/api/guest/session', async (req, res) => {
+    try {
+        let sessionId = req.headers['x-session-id'];
+        if (!sessionId) {
+            // Generate new session ID
+            sessionId = require('crypto').randomUUID();
+        }
+        const guest = await findOrCreateGuest(sessionId);
+        const dailyCount = await getGuestDailyCount(sessionId);
+        
+        res.json({ 
+            sessionId,
+            dailyCount,
+        });
+    } catch (error) {
+        console.error('Get guest session error:', error);
+        res.status(500).json({ error: 'Failed to get guest session' });
+    }
+});
+
+// Update guest daily count
+app.post('/api/guest/update-count', async (req, res) => {
+    try {
+        const sessionId = req.headers['x-session-id'];
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Session ID required' });
+        }
+        
+        const guest = await updateGuestDailyCount(sessionId);
+        res.json({ 
+            dailyCount: guest.dailyCount,
+        });
+    } catch (error) {
+        console.error('Update guest count error:', error);
+        res.status(500).json({ error: 'Failed to update guest count' });
+    }
+});
+
+// Get guest daily count
+app.get('/api/guest/count', async (req, res) => {
+    try {
+        const sessionId = req.headers['x-session-id'];
+        if (!sessionId) {
+            return res.json({ dailyCount: 0 });
+        }
+        
+        const dailyCount = await getGuestDailyCount(sessionId);
+        res.json({ dailyCount });
+    } catch (error) {
+        console.error('Get guest count error:', error);
+        res.status(500).json({ error: 'Failed to get guest count' });
+    }
+});
+
+// ==================== History APIs ====================
+
+// Save history (authenticated user)
+app.post('/api/history', authenticate, async (req, res) => {
+    try {
+        const { imageUrl, timestamp, totalCount, categories, objects } = req.body;
+        
+        if (!imageUrl || !timestamp || totalCount === undefined) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        
+        const history = await saveHistory(req.clerkId, false, {
+            imageUrl,
+            timestamp,
+            totalCount,
+            categories: categories || {},
+            objects: objects || [],
+        });
+        
+        res.json({ 
+            id: history._id.toString(),
+            ...history.toObject(),
+        });
+    } catch (error) {
+        console.error('Save history error:', error);
+        res.status(500).json({ error: 'Failed to save history' });
+    }
+});
+
+// Save history (guest user)
+app.post('/api/history/guest', async (req, res) => {
+    try {
+        const sessionId = req.headers['x-session-id'];
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Session ID required' });
+        }
+        
+        const { imageUrl, timestamp, totalCount, categories, objects } = req.body;
+        
+        if (!imageUrl || !timestamp || totalCount === undefined) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        
+        const history = await saveHistory(sessionId, true, {
+            imageUrl,
+            timestamp,
+            totalCount,
+            categories: categories || {},
+            objects: objects || [],
+        });
+        
+        res.json({ 
+            id: history._id.toString(),
+            ...history.toObject(),
+        });
+    } catch (error) {
+        console.error('Save guest history error:', error);
+        res.status(500).json({ error: 'Failed to save guest history' });
+    }
+});
+
+// Get history (authenticated user)
+app.get('/api/history', authenticate, async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 50;
+        const history = await getUserHistory(req.clerkId, false, limit);
+        
+        // Transform to match frontend format
+        const formattedHistory = history.map(item => ({
+            id: item._id.toString(),
+            imageUrl: item.imageUrl,
+            timestamp: item.timestamp,
+            totalCount: item.totalCount,
+            categories: item.categories,
+            objects: item.objects,
+        }));
+        
+        res.json(formattedHistory);
+    } catch (error) {
+        console.error('Get history error:', error);
+        res.status(500).json({ error: 'Failed to get history' });
+    }
+});
+
+// Get history (guest user)
+app.get('/api/history/guest', async (req, res) => {
+    try {
+        const sessionId = req.headers['x-session-id'];
+        if (!sessionId) {
+            return res.json([]);
+        }
+        
+        const limit = parseInt(req.query.limit) || 50;
+        const history = await getUserHistory(sessionId, true, limit);
+        
+        // Transform to match frontend format
+        const formattedHistory = history.map(item => ({
+            id: item._id.toString(),
+            imageUrl: item.imageUrl,
+            timestamp: item.timestamp,
+            totalCount: item.totalCount,
+            categories: item.categories,
+            objects: item.objects,
+        }));
+        
+        res.json(formattedHistory);
+    } catch (error) {
+        console.error('Get guest history error:', error);
+        res.status(500).json({ error: 'Failed to get guest history' });
+    }
+});
+
+// Delete history (authenticated user)
+app.delete('/api/history/:id', authenticate, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await deleteHistory(id, req.clerkId, false);
+        
+        if (!result) {
+            return res.status(404).json({ error: 'History item not found' });
+        }
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete history error:', error);
+        res.status(500).json({ error: 'Failed to delete history' });
+    }
+});
+
+// Delete history (guest user)
+app.delete('/api/history/guest/:id', async (req, res) => {
+    try {
+        const sessionId = req.headers['x-session-id'];
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Session ID required' });
+        }
+        
+        const { id } = req.params;
+        const result = await deleteHistory(id, sessionId, true);
+        
+        if (!result) {
+            return res.status(404).json({ error: 'History item not found' });
+        }
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete guest history error:', error);
+        res.status(500).json({ error: 'Failed to delete guest history' });
+    }
+});
+
+// ==================== Migration APIs ====================
+
+// Migrate guest data to user account
+app.post('/api/migrate/guest-to-user', authenticate, async (req, res) => {
+    try {
+        const sessionId = req.body.sessionId || req.headers['x-session-id'];
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Session ID required' });
+        }
+
+        // Get guest data
+        const guestData = await getGuestData(sessionId);
+        if (!guestData) {
+            // No guest data to migrate
+            return res.json({ 
+                success: true, 
+                message: 'No guest data to migrate',
+                historyMigrated: 0,
+                countMigrated: false
+            });
+        }
+
+        // Migrate history
+        const historyResult = await migrateGuestHistoryToUser(sessionId, req.clerkId);
+        const historyMigrated = historyResult.modifiedCount || 0;
+
+        // Merge daily count if guest has count for today
+        let countMigrated = false;
+        if (guestData.dailyCount > 0 && guestData.lastCountDate) {
+            await mergeGuestDailyCount(
+                req.clerkId,
+                guestData.dailyCount,
+                guestData.lastCountDate
+            );
+            countMigrated = true;
+        }
+
+        // Delete guest data after migration
+        await deleteGuest(sessionId);
+
+        res.json({
+            success: true,
+            message: 'Guest data migrated successfully',
+            historyMigrated,
+            countMigrated,
+        });
+    } catch (error) {
+        console.error('Migrate guest data error:', error);
+        res.status(500).json({ error: 'Failed to migrate guest data' });
     }
 });
 

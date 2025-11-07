@@ -9,6 +9,9 @@ import { PaymentCallback } from "./components/PaymentCallback";
 import { UserProfilePage } from "./components/UserProfilePage";
 import { Toaster } from "./components/ui/sonner";
 import { getCurrentUser, updateDailyCount } from "./services/auth";
+import { getGuestSession, getGuestDailyCount, updateGuestDailyCount } from "./services/guest";
+import { saveHistory, saveGuestHistory } from "./services/history";
+import { migrateGuestToUser } from "./services/migration";
 import { toast } from "sonner";
 
 export type DetectedObject = {
@@ -41,7 +44,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const freeLimit = 5;
 
-  // Load user data from backend or localStorage
+  // Load user data from backend
   useEffect(() => {
     const loadUserData = async () => {
       if (!isLoaded) {
@@ -49,17 +52,13 @@ export default function App() {
       }
 
       if (!isSignedIn) {
-        // For guest users, use localStorage
-        const savedCount = localStorage.getItem("guestDailyCount");
-        const savedDate = localStorage.getItem("guestDailyCountDate");
-        const today = new Date().toDateString();
-
-        if (savedDate === today && savedCount) {
-          setDailyCount(parseInt(savedCount));
-        } else {
+        // For guest users, load from backend
+        try {
+          const { dailyCount: count } = await getGuestSession();
+          setDailyCount(count);
+        } catch (error) {
+          console.error("Failed to load guest data:", error);
           setDailyCount(0);
-          localStorage.setItem("guestDailyCountDate", today);
-          localStorage.setItem("guestDailyCount", "0");
         }
         setUserTier("free");
         setLoading(false);
@@ -107,16 +106,28 @@ export default function App() {
         console.error("Failed to update count:", error);
       }
     } else {
-      // For guest users, update localStorage
-      const newCount = dailyCount + 1;
-      setDailyCount(newCount);
-      localStorage.setItem("guestDailyCount", newCount.toString());
+      // For guest users, update on backend
+      try {
+        const newCount = await updateGuestDailyCount();
+        setDailyCount(newCount);
+      } catch (error) {
+        console.error("Failed to update guest count:", error);
+      }
     }
 
     // Save to history
-    const history = JSON.parse(localStorage.getItem("countHistory") || "[]");
-    history.unshift(result);
-    localStorage.setItem("countHistory", JSON.stringify(history.slice(0, 50)));
+    try {
+      if (isSignedIn) {
+        const token = await getToken();
+        if (token) {
+          await saveHistory(token, result);
+        }
+      } else {
+        await saveGuestHistory(result);
+      }
+    } catch (error) {
+      console.error("Failed to save history:", error);
+    }
   };
 
   const handleUpgrade = async () => {
@@ -136,10 +147,24 @@ export default function App() {
   };
 
   const handleLoginSuccess = async () => {
-    // After login, load user data and refresh
+    // After login, migrate guest data and load user data
     try {
       const token = await getToken();
       if (token) {
+        // Migrate guest data to user account
+        try {
+          const migrationResult = await migrateGuestToUser(token);
+          if (migrationResult.historyMigrated > 0 || migrationResult.countMigrated) {
+            toast.success(
+              `Migrated ${migrationResult.historyMigrated} history items to your account`
+            );
+          }
+        } catch (error) {
+          console.error("Failed to migrate guest data:", error);
+          // Don't block login if migration fails
+        }
+
+        // Load user data
         const userData = await getCurrentUser(token);
         setUserTier(userData.tier);
         setDailyCount(userData.dailyCount || 0);
@@ -147,6 +172,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Failed to load user data after login:", error);
+      toast.error("Failed to load user data after login");
     }
   };
 

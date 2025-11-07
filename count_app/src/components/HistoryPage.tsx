@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+import { useAuth } from '@clerk/clerk-react';
 import { Home, Trash2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -5,6 +7,7 @@ import { ProcessedImage, UserTier } from '../App';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { toast } from 'sonner@2.0.3';
 import { Alert, AlertDescription } from './ui/alert';
+import { getHistory, getGuestHistory, deleteHistoryItem, deleteGuestHistoryItem } from '../services/history';
 
 type HistoryPageProps = {
   onBack: () => void;
@@ -13,17 +16,54 @@ type HistoryPageProps = {
 };
 
 export function HistoryPage({ onBack, onSelectImage, userTier }: HistoryPageProps) {
-  const history: ProcessedImage[] = JSON.parse(localStorage.getItem('countHistory') || '[]');
+  const { isSignedIn, getToken } = useAuth();
+  const [history, setHistory] = useState<ProcessedImage[]>([]);
+  const [loading, setLoading] = useState(true);
   const maxFreeHistory = 3;
   const visibleHistory = userTier === 'pro' ? history : history.slice(0, maxFreeHistory);
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        setLoading(true);
+        let data: ProcessedImage[] = [];
+        if (isSignedIn) {
+          const token = await getToken();
+          if (token) {
+            data = await getHistory(token);
+          }
+        } else {
+          data = await getGuestHistory();
+        }
+        setHistory(data);
+      } catch (error) {
+        console.error('Failed to load history:', error);
+        toast.error('Failed to load history');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadHistory();
+  }, [isSignedIn, getToken]);
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const newHistory = history.filter(item => item.id !== id);
-    localStorage.setItem('countHistory', JSON.stringify(newHistory));
-    toast.success('Item deleted from history');
-    // Force re-render
-    window.location.reload();
+    try {
+      if (isSignedIn) {
+        const token = await getToken();
+        if (token) {
+          await deleteHistoryItem(token, id);
+        }
+      } else {
+        await deleteGuestHistoryItem(id);
+      }
+      setHistory(history.filter(item => item.id !== id));
+      toast.success('Item deleted from history');
+    } catch (error) {
+      console.error('Failed to delete history:', error);
+      toast.error('Failed to delete history item');
+    }
   };
 
   return (
@@ -55,7 +95,11 @@ export function HistoryPage({ onBack, onSelectImage, userTier }: HistoryPageProp
             </Alert>
           )}
 
-          {visibleHistory.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-20">
+              <p className="text-[#E0E0E0] text-lg">Loading history...</p>
+            </div>
+          ) : visibleHistory.length === 0 ? (
             <div className="text-center py-20">
               <p className="text-[#E0E0E0] text-lg">No history yet</p>
               <p className="text-[#E0E0E0] text-sm mt-2">Start counting to see your history here</p>

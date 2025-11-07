@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Upload, History, Zap, LogIn, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -19,6 +19,7 @@ import { ImageWithFallback } from './figma/ImageWithFallback';
 import { uploadImage } from '../services/api';
 import { UserMenu } from './UserMenu';
 import { useAuth } from '@clerk/clerk-react';
+import { getHistory, getGuestHistory } from '../services/history';
 
 type HomePageProps = {
   onImageUpload: (imageUrl: string) => void;
@@ -35,9 +36,29 @@ export function HomePage({ onImageUpload, onNavigateHistory, onNavigateAuth, onN
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
-  const { signOut } = useAuth();
-  const history: ProcessedImage[] = JSON.parse(localStorage.getItem('countHistory') || '[]');
-  const recentImages = history.slice(0, 3);
+  const { signOut, getToken } = useAuth();
+  const [recentImages, setRecentImages] = useState<ProcessedImage[]>([]);
+
+  useEffect(() => {
+    const loadRecentHistory = async () => {
+      try {
+        let data: ProcessedImage[] = [];
+        if (isSignedIn) {
+          const token = await getToken();
+          if (token) {
+            data = await getHistory(token, 3);
+          }
+        } else {
+          data = await getGuestHistory(3);
+        }
+        setRecentImages(data);
+      } catch (error) {
+        console.error('Failed to load recent history:', error);
+      }
+    };
+
+    loadRecentHistory();
+  }, [isSignedIn, getToken]);
 
   const handleSignOutClick = () => {
     setShowSignOutDialog(true);

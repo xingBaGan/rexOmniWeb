@@ -136,6 +136,34 @@ const getDailyCount = async (clerkId) => {
     return user.dailyCount;
 };
 
+/**
+ * Merge guest daily count into user account
+ */
+const mergeGuestDailyCount = async (clerkId, guestDailyCount, guestLastCountDate) => {
+    const user = await User.findOne({ clerkId });
+    if (!user) return null;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const userLastDate = user.lastCountDate ? new Date(user.lastCountDate) : null;
+    const guestDate = guestLastCountDate ? new Date(guestLastCountDate) : null;
+
+    // If guest has count for today and user doesn't, use guest's count
+    if (guestDate && guestDate.getTime() === today.getTime()) {
+        if (!userLastDate || userLastDate.getTime() !== today.getTime()) {
+            // User has no count for today, use guest's count
+            user.dailyCount = guestDailyCount;
+            user.lastCountDate = guestDate;
+        } else {
+            // Both have count for today, use the higher one
+            user.dailyCount = Math.max(user.dailyCount, guestDailyCount);
+        }
+    }
+
+    await user.save();
+    return user;
+};
+
 module.exports = {
     User,
     findOrCreateUser,
@@ -143,5 +171,6 @@ module.exports = {
     updateSubscription,
     updateDailyCount,
     getDailyCount,
+    mergeGuestDailyCount,
 };
 
