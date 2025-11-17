@@ -93,3 +93,27 @@ npm run dev:count-app
 - Count app frontend runs on port 3000 (check vite.config.ts for actual port)
 - Make sure to configure CORS if running on different ports
 
+## Docker
+
+1. Build the image (provide your frontend API base URL if needed):
+```
+docker build -t rexomniweb --build-arg VITE_API_BASE_URL=https://your-api .
+```
+2. Run the container with your environment configuration:
+```
+docker run -d \
+  --name rexomniweb \
+  -p 3000:3000 \
+  --env-file .env \
+  rexomniweb
+```
+3. Persist uploads by mounting a host directory if desired:
+```
+docker run -d \
+  --name rexomniweb \
+  -p 3000:3000 \
+  --env-file .env \
+  -v /data/uploads:/app/uploads \
+  rexomniweb
+```
+

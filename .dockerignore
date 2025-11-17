@@ -1,0 +1,14 @@
+node_modules
+count_app/node_modules
+count_app/dist
+uploads/*
+.git
+.gitignore
+.env
+npm-debug.log
+yarn-error.log
+count_app/.env
+count_app/.env.development
+count_app/.env.production
+
+

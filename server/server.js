@@ -25,7 +25,12 @@ const app = express();
 const upload = multer({ dest: path.join(__dirname, '../uploads/') });
 
 // Serve static files from the root directory
-app.use(express.static(path.join(__dirname, '..')));
+app.use(express.static(path.join(__dirname, "..")));
+const distDir = path.join(__dirname, "../count_app/dist");
+const hasFrontendBuild = fs.existsSync(distDir);
+if (hasFrontendBuild) {
+    app.use(express.static(distDir));
+}
 // Enable CORS for count app
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -765,6 +770,16 @@ app.post('/api/webhooks/clerk', express.json(), async (req, res) => {
         res.status(400).json({ error: 'Webhook processing failed' });
     }
 });
+
+if (hasFrontendBuild) {
+    app.get("*", (req, res, next) => {
+        const skipPaths = ["/api", "/upload", "/predict", "/tagger", "/health", "/api/payment/webhook"];
+        if (skipPaths.some(prefix => req.path.startsWith(prefix))) {
+            return next();
+        }
+        return res.sendFile(path.join(distDir, "index.html"));
+    });
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
