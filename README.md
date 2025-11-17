@@ -95,9 +95,14 @@ npm run dev:count-app
 
 ## Docker
 
-1. Build the image (provide your frontend API base URL if needed):
+1. Build the image (provide the frontend build-time values):
 ```
-docker build -t rexomniweb --build-arg VITE_API_BASE_URL=https://your-api .
+docker build -t rexomniweb \
+  --build-arg VITE_API_BASE_URL=https://your-api \
+  --build-arg VITE_CLERK_PUBLISHABLE_KEY=pk_live_xxx \
+  --build-arg VITE_STRIPE_PRICE_ID_MONTHLY=price_monthly \
+  --build-arg VITE_STRIPE_PRICE_ID_ANNUAL=price_annual \
+  .
 ```
 2. Run the container with your environment configuration:
 ```
