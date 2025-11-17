@@ -228,6 +228,10 @@ export default function App() {
           onNavigateHistory={() => setCurrentPage("history")}
           onNavigateAuth={() => setCurrentPage("auth")}
           onNavigateProfile={() => setCurrentPage("profile")}
+          onSelectImage={(result) => {
+            setProcessedResult(result);
+            setCurrentPage("result");
+          }}
           userTier={userTier}
           dailyCount={dailyCount}
           isSignedIn={isSignedIn}

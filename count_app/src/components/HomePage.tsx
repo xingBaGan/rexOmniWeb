@@ -26,13 +26,14 @@ type HomePageProps = {
   onNavigateHistory: () => void;
   onNavigateAuth: () => void;
   onNavigateProfile: () => void;
+  onSelectImage: (result: ProcessedImage) => void;
   userTier: UserTier;
   dailyCount: number;
   isSignedIn: boolean;
   freeLimit: number;
 };
 
-export function HomePage({ onImageUpload, onNavigateHistory, onNavigateAuth, onNavigateProfile, userTier, dailyCount, isSignedIn, freeLimit }: HomePageProps) {
+export function HomePage({ onImageUpload, onNavigateHistory, onNavigateAuth, onNavigateProfile, onSelectImage, userTier, dailyCount, isSignedIn, freeLimit }: HomePageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
@@ -208,8 +209,7 @@ export function HomePage({ onImageUpload, onNavigateHistory, onNavigateAuth, onN
                     key={item.id}
                     className="bg-[#1F1F1F] border-[#2F2F2F] overflow-hidden cursor-pointer hover:border-[#4D8FFF] transition-colors"
                     onClick={() => {
-                      // Navigate to result page with this image
-                      window.dispatchEvent(new CustomEvent('viewResult', { detail: item }));
+                      onSelectImage(item);
                     }}
                   >
                     <div className="aspect-video relative">

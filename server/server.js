@@ -1,3 +1,6 @@
+// Load environment variables first
+require('dotenv').config();
+
 const express = require('express');
 const multer = require('multer');
 const axios = require('axios');
@@ -35,8 +38,6 @@ app.use((req, res, next) => {
 
 // JSON body parser
 app.use(express.json());
-// Load environment variables
-require('dotenv').config();
 
 // Connect to MongoDB
 connectDB();
@@ -45,6 +46,7 @@ const requiredEnvVars = [
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_GATEWAY_ID",
     "BACKEND_URL",
+    "STRIPE_SECRET_KEY",
 ];
 const missingEnvVars = requiredEnvVars.filter(
     (name) => !process.env[name] || process.env[name].trim() === "",
