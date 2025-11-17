@@ -1,13 +1,41 @@
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 /**
- * Create checkout session
+ * Create checkout session with multiple payment methods support
+ * @param {string} userId - User ID
+ * @param {string} priceId - Stripe Price ID
+ * @param {string} mode - Payment mode: "subscription" or "payment"
+ * @param {string} paymentType - Payment type: "card", "alipay", "wechat_pay", "usdc", or "all"
  */
-const createCheckoutSession = async (userId, priceId, mode = "subscription") => {
+const createCheckoutSession = async (userId, priceId, mode = "subscription", paymentType = "card") => {
     try {
-        const session = await stripe.checkout.sessions.create({
+        // Determine payment methods based on mode and payment type
+        // Note: Subscriptions only support card payment
+        // WeChat Pay and Alipay typically don't support subscriptions
+        let paymentMethodTypes;
+        
+        if (mode === "subscription") {
+            // Subscriptions only support card
+            paymentMethodTypes = ["card"];
+        } else {
+            // One-time payments support multiple methods
+            if (paymentType === "all") {
+                paymentMethodTypes = ["card", "alipay", "wechat_pay"];
+            } else if (paymentType === "alipay") {
+                paymentMethodTypes = ["alipay"];
+            } else if (paymentType === "wechat_pay") {
+                paymentMethodTypes = ["wechat_pay"];
+            } else if (paymentType === "usdc") {
+                // USDC support depends on Stripe configuration
+                paymentMethodTypes = ["usdc"];
+            } else {
+                paymentMethodTypes = ["card"];
+            }
+        }
+
+        const sessionConfig = {
             mode,
-            payment_method_types: ["card"],
+            payment_method_types: paymentMethodTypes,
             line_items: [
                 {
                     price: priceId,
@@ -20,7 +48,18 @@ const createCheckoutSession = async (userId, priceId, mode = "subscription") => 
             metadata: {
                 userId: userId.toString(),
             },
-        });
+        };
+
+        // Add WeChat Pay specific configuration
+        if (paymentMethodTypes.includes("wechat_pay")) {
+            sessionConfig.payment_method_options = {
+                wechat_pay: {
+                    client: "web",
+                },
+            };
+        }
+
+        const session = await stripe.checkout.sessions.create(sessionConfig);
 
         return session;
     } catch (error) {

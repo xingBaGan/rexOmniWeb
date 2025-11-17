@@ -637,13 +637,24 @@ app.post('/api/migrate/guest-to-user', authenticate, async (req, res) => {
 // Create checkout session
 app.post('/api/payment/create-checkout', authenticate, async (req, res) => {
     try {
-        const { priceId } = req.body;
+        const { priceId, mode = "subscription", paymentType = "card" } = req.body;
         
         if (!priceId) {
             return res.status(400).json({ error: 'Price ID is required' });
         }
 
-        const session = await createCheckoutSession(req.clerkId, priceId);
+        // Validate mode
+        if (mode !== "subscription" && mode !== "payment") {
+            return res.status(400).json({ error: 'Mode must be "subscription" or "payment"' });
+        }
+
+        // Validate payment type
+        const validPaymentTypes = ["card", "alipay", "wechat_pay", "usdc", "all"];
+        if (!validPaymentTypes.includes(paymentType)) {
+            return res.status(400).json({ error: `Payment type must be one of: ${validPaymentTypes.join(", ")}` });
+        }
+
+        const session = await createCheckoutSession(req.clerkId, priceId, mode, paymentType);
         res.json({ sessionId: session.id, url: session.url });
     } catch (error) {
         console.error('Checkout error:', error);

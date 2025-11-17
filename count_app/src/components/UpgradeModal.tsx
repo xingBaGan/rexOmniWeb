@@ -24,8 +24,8 @@ export function UpgradeModal({ open, onClose, onUpgrade }: UpgradeModalProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
   // Get price IDs from environment variables
-  const monthlyPriceId = import.meta.env.VITE_STRIPE_PRICE_ID_MONTHLY;
-  const annualPriceId = import.meta.env.VITE_STRIPE_PRICE_ID_ANNUAL;
+  const monthlyPriceId = (import.meta.env as any).VITE_STRIPE_PRICE_ID_MONTHLY;
+  const annualPriceId = (import.meta.env as any).VITE_STRIPE_PRICE_ID_ANNUAL;
 
   const features = [
     "Unlimited counts per day",
@@ -38,16 +38,27 @@ export function UpgradeModal({ open, onClose, onUpgrade }: UpgradeModalProps) {
     "Priority processing",
   ];
 
-  const handlePayment = async (priceId: string) => {
+  const handlePayment = async (priceId: string, isSubscription: boolean = true) => {
     try {
       setLoading(priceId);
       const token = await getToken();
       if (!token) {
         toast.error("Please sign in to continue");
+        setLoading(null);
         return;
       }
 
-      const { url } = await createCheckoutSession(token, priceId);
+      // For subscriptions, only card is supported
+      // For one-time payments, allow all payment methods
+      const mode = isSubscription ? "subscription" : "payment";
+      const paymentType = isSubscription ? "card" : "all";
+
+      const { url } = await createCheckoutSession(token, {
+        priceId,
+        mode,
+        paymentType,
+      });
+      
       if (url) {
         // Redirect to Stripe checkout
         window.location.href = url;
