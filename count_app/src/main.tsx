@@ -12,7 +12,14 @@ if (!PUBLISHABLE_KEY) {
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+    <ClerkProvider
+      publishableKey={PUBLISHABLE_KEY}
+      appearance={{
+        elements: {
+          socialButtonsBlockButton: "bg-[#2F2F2F] text-white hover:bg-[#3F3F3F] border-[#3F3F3F]",
+        },
+      }}
+    >
       <App />
     </ClerkProvider>
   </React.StrictMode>

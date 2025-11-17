@@ -28,12 +28,16 @@ export function AuthPage({ mode: initialMode = "sign-in", onLoginSuccess }: Auth
                 headerTitle: "text-white",
                 headerSubtitle: "text-[#E0E0E0]",
                 socialButtonsBlockButton: "bg-[#2F2F2F] text-white hover:bg-[#3F3F3F] border-[#3F3F3F]",
+                socialButtonsBlockButtonText: "text-white",
+                socialButtonsBlockButtonArrow: "text-white",
                 formButtonPrimary: "bg-[#4D8FFF] hover:bg-[#3D7FEF]",
                 formFieldInput: "bg-[#2F2F2F] border-[#3F3F3F] text-white",
                 formFieldLabel: "text-white",
                 footerActionLink: "text-[#4D8FFF]",
                 identityPreviewText: "text-white",
                 identityPreviewEditButton: "text-[#4D8FFF]",
+                dividerLine: "bg-[#3F3F3F]",
+                dividerText: "text-[#E0E0E0]",
               },
             }}
             routing="hash"
@@ -49,10 +53,14 @@ export function AuthPage({ mode: initialMode = "sign-in", onLoginSuccess }: Auth
                 headerTitle: "text-white",
                 headerSubtitle: "text-[#E0E0E0]",
                 socialButtonsBlockButton: "bg-[#2F2F2F] text-white hover:bg-[#3F3F3F] border-[#3F3F3F]",
+                socialButtonsBlockButtonText: "text-white",
+                socialButtonsBlockButtonArrow: "text-white",
                 formButtonPrimary: "bg-[#4D8FFF] hover:bg-[#3D7FEF]",
                 formFieldInput: "bg-[#2F2F2F] border-[#3F3F3F] text-white",
                 formFieldLabel: "text-white",
                 footerActionLink: "text-[#4D8FFF]",
+                dividerLine: "bg-[#3F3F3F]",
+                dividerText: "text-[#E0E0E0]",
               },
             }}
             routing="hash"
