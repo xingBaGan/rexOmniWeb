@@ -14,7 +14,7 @@ RUN npm install --production
 COPY server ./server
 COPY shared ./shared
 COPY uploads ./uploads
-COPY --from=frontend /app/count_app/dist ./count_app/dist
+COPY --from=frontend /app/count_app/build ./count_app/build
 ENV NODE_ENV="production"
 ENV PORT=3000
 EXPOSE 3000

@@ -26,7 +26,7 @@ const upload = multer({ dest: path.join(__dirname, '../uploads/') });
 
 // Serve static files from the root directory
 app.use(express.static(path.join(__dirname, "..")));
-const distDir = path.join(__dirname, "../count_app/dist");
+const distDir = path.join(__dirname, "../count_app/build");
 const hasFrontendBuild = fs.existsSync(distDir);
 if (hasFrontendBuild) {
     app.use(express.static(distDir));
