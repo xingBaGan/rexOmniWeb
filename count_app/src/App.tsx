@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
 import { HomePage } from "./components/HomePage";
 import { ProcessingPage } from "./components/ProcessingPage";
@@ -34,12 +35,13 @@ export type ProcessedImage = {
 
 export type UserTier = "free" | "pro";
 
-export default function App() {
+// Main app component with routing
+function AppRoutes() {
   const { isSignedIn, getToken, isLoaded } = useAuth();
   const { user: clerkUser } = useUser();
-  const [currentPage, setCurrentPage] = useState<"home" | "processing" | "result" | "history" | "auth" | "profile">("home");
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [processedResult, setProcessedResult] = useState<ProcessedImage | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  
   const [userTier, setUserTier] = useState<UserTier>("free");
   const [dailyCount, setDailyCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -49,7 +51,6 @@ export default function App() {
   // Initialize guest session immediately on mount (before Clerk loads)
   useEffect(() => {
     const initGuestSession = async () => {
-      // Try to create guest session immediately, don't wait for Clerk
       try {
         await getGuestSession();
       } catch (error) {
@@ -58,18 +59,16 @@ export default function App() {
     };
     
     initGuestSession();
-  }, []); // Run once on mount
+  }, []);
 
   // Load user data from backend
   useEffect(() => {
     const loadUserData = async () => {
-      // Wait for Clerk to load before checking auth status
       if (!isLoaded) {
         return;
       }
 
       if (!isSignedIn) {
-        // For guest users, ensure session exists and load data
         try {
           const { dailyCount: count } = await getGuestSession();
           setDailyCount(count);
@@ -82,7 +81,6 @@ export default function App() {
         return;
       }
 
-      // For signed-in users, load from backend
       try {
         const token = await getToken();
         if (token) {
@@ -102,17 +100,12 @@ export default function App() {
   }, [isSignedIn, isLoaded, getToken]);
 
   const handleImageUpload = (imageUrl: string) => {
-    setSelectedImage(imageUrl);
-    setCurrentPage("processing");
+    navigate("/processing", { state: { imageUrl } });
   };
 
   const handleProcessingComplete = async (result: ProcessedImage) => {
-    setProcessedResult(result);
-    setCurrentPage("result");
-
     // Update daily count
     if (isSignedIn) {
-      // For signed-in users, update on backend
       try {
         const token = await getToken();
         if (token) {
@@ -123,7 +116,6 @@ export default function App() {
         console.error("Failed to update count:", error);
       }
     } else {
-      // For guest users, update on backend
       try {
         const newCount = await updateGuestDailyCount();
         setDailyCount(newCount);
@@ -145,10 +137,12 @@ export default function App() {
     } catch (error) {
       console.error("Failed to save history:", error);
     }
+
+    // Navigate to result page with result data
+    navigate("/result", { state: { result } });
   };
 
   const handleUpgrade = async () => {
-    // Refresh user data after upgrade
     if (isSignedIn) {
       try {
         const token = await getToken();
@@ -164,11 +158,9 @@ export default function App() {
   };
 
   const handleLoginSuccess = async () => {
-    // After login, migrate guest data and load user data
     try {
       const token = await getToken();
       if (token) {
-        // Migrate guest data to user account
         try {
           const migrationResult = await migrateGuestToUser(token);
           if (migrationResult.historyMigrated > 0 || migrationResult.countMigrated) {
@@ -178,16 +170,13 @@ export default function App() {
           }
         } catch (error) {
           console.error("Failed to migrate guest data:", error);
-          // Don't block login if migration fails
         }
 
-        // Load user data
         const userData = await getCurrentUser(token);
         setUserTier(userData.tier);
         setDailyCount(userData.dailyCount || 0);
-        setCurrentPage("home");
+        navigate("/");
         
-        // If user is free tier, show upgrade modal
         if (userData.tier === "free") {
           setShowUpgradeModal(true);
         }
@@ -199,7 +188,6 @@ export default function App() {
   };
 
   const handlePaymentCallbackComplete = async () => {
-    // Refresh user data and return to home
     if (isSignedIn) {
       try {
         const token = await getToken();
@@ -212,16 +200,12 @@ export default function App() {
         console.error("Failed to refresh user data:", error);
       }
     }
-    // Clear URL parameters
-    window.history.replaceState({}, "", window.location.pathname);
-    setCurrentPage("home");
+    
+    // Get return_to from URL params or default to home
+    const urlParams = new URLSearchParams(window.location.search);
+    const returnTo = urlParams.get("return_to") || "/";
+    navigate(returnTo);
   };
-
-  // Check if this is a payment callback
-  const urlParams = new URLSearchParams(window.location.search);
-  const isPaymentCallback = urlParams.has("session_id") || 
-    window.location.hash.includes("payment/success") || 
-    window.location.hash.includes("payment/cancel");
 
   // Show loading state
   if (!isLoaded || loading) {
@@ -232,68 +216,155 @@ export default function App() {
     );
   }
 
-  // Show payment callback page if this is a payment callback
-  if (isPaymentCallback) {
-    return <PaymentCallback onComplete={handlePaymentCallbackComplete} />;
-  }
-
-  // Show auth page if navigating to auth
-  if (currentPage === "auth") {
-    return <AuthPage mode="sign-in" onLoginSuccess={handleLoginSuccess} />;
-  }
-
   return (
     <div className="min-h-screen bg-[#121212] text-white">
-      {currentPage === "home" && (
-        <HomePage
-          onImageUpload={handleImageUpload}
-          onNavigateHistory={() => setCurrentPage("history")}
-          onNavigateAuth={() => setCurrentPage("auth")}
-          onNavigateProfile={() => setCurrentPage("profile")}
-          onSelectImage={(result) => {
-            setProcessedResult(result);
-            setCurrentPage("result");
-          }}
-          userTier={userTier}
-          dailyCount={dailyCount}
-          isSignedIn={isSignedIn}
-          freeLimit={freeLimit}
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <HomePage
+              onImageUpload={handleImageUpload}
+              onNavigateHistory={() => navigate("/history")}
+              onNavigateAuth={() => navigate("/auth")}
+              onNavigateProfile={() => navigate("/profile")}
+              onSelectImage={(result) => {
+                navigate("/result", { state: { result } });
+              }}
+              userTier={userTier}
+              dailyCount={dailyCount}
+              isSignedIn={isSignedIn}
+              freeLimit={freeLimit}
+            />
+          }
         />
-      )}
-      {currentPage === "processing" && selectedImage && (
-        <ProcessingPage
-          imageUrl={selectedImage}
-          onComplete={handleProcessingComplete}
-          onCancel={() => setCurrentPage("home")}
+        <Route
+          path="/processing"
+          element={
+            <ProcessingPageWrapper
+              onComplete={handleProcessingComplete}
+              onCancel={() => navigate("/")}
+            />
+          }
         />
-      )}
-      {currentPage === "result" && processedResult && (
-        <ResultPage
-          result={processedResult}
-          onBack={() => setCurrentPage("home")}
-          userTier={userTier}
-          onUpgrade={handleUpgrade}
+        <Route
+          path="/result"
+          element={
+            <ResultPageWrapper
+              userTier={userTier}
+              onUpgrade={handleUpgrade}
+              onBack={() => navigate("/")}
+            />
+          }
         />
-      )}
-      {currentPage === "history" && (
-        <HistoryPage
-          onBack={() => setCurrentPage("home")}
-          onSelectImage={(result) => {
-            setProcessedResult(result);
-            setCurrentPage("result");
-          }}
-          userTier={userTier}
+        <Route
+          path="/history"
+          element={
+            <HistoryPage
+              onBack={() => navigate("/")}
+              onSelectImage={(result) => {
+                navigate("/result", { state: { result } });
+              }}
+              userTier={userTier}
+            />
+          }
         />
-      )}
-      {currentPage === "profile" && (
-        <UserProfilePage onBack={() => setCurrentPage("home")} />
-      )}
+        <Route
+          path="/profile"
+          element={<UserProfilePage onBack={() => navigate("/")} />}
+        />
+        <Route
+          path="/auth"
+          element={<AuthPage mode="sign-in" onLoginSuccess={handleLoginSuccess} />}
+        />
+        <Route
+          path="/payment/success"
+          element={<PaymentCallback onComplete={handlePaymentCallbackComplete} />}
+        />
+        <Route
+          path="/payment/cancel"
+          element={<PaymentCallback onComplete={handlePaymentCallbackComplete} />}
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      
       <UpgradeModal
         open={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
         onUpgrade={handleUpgrade}
+        returnTo={location.pathname}
       />
       <Toaster theme="dark" />
     </div>
+  );
+}
+
+// Wrapper component for ProcessingPage to access location state
+function ProcessingPageWrapper({
+  onComplete,
+  onCancel,
+}: {
+  onComplete: (result: ProcessedImage) => void;
+  onCancel: () => void;
+}) {
+  const location = useLocation();
+  const imageUrl = (location.state as { imageUrl?: string })?.imageUrl;
+
+  if (!imageUrl) {
+    return (
+      <div className="min-h-screen bg-[#121212] flex items-center justify-center text-white">
+        <div className="text-center">
+          <p className="mb-4">No image selected</p>
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 bg-[#4D8FFF] rounded hover:bg-[#3D7FEF]"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return <ProcessingPage imageUrl={imageUrl} onComplete={onComplete} onCancel={onCancel} />;
+}
+
+// Wrapper component for ResultPage to access location state
+function ResultPageWrapper({
+  userTier,
+  onUpgrade,
+  onBack,
+}: {
+  userTier: UserTier;
+  onUpgrade: () => void;
+  onBack: () => void;
+}) {
+  const location = useLocation();
+  const result = (location.state as { result?: ProcessedImage })?.result;
+
+  if (!result) {
+    return (
+      <div className="min-h-screen bg-[#121212] flex items-center justify-center text-white">
+        <div className="text-center">
+          <p className="mb-4">No result data available</p>
+          <button
+            onClick={onBack}
+            className="px-4 py-2 bg-[#4D8FFF] rounded hover:bg-[#3D7FEF]"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return <ResultPage result={result} onBack={onBack} userTier={userTier} onUpgrade={onUpgrade} />;
+}
+
+// Root App component with Router
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }

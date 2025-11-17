@@ -637,7 +637,7 @@ app.post('/api/migrate/guest-to-user', authenticate, async (req, res) => {
 // Create checkout session
 app.post('/api/payment/create-checkout', authenticate, async (req, res) => {
     try {
-        const { priceId, mode = "subscription", paymentType = "card" } = req.body;
+        const { priceId, mode = "subscription", paymentType = "card", returnTo = "/" } = req.body;
         
         if (!priceId) {
             return res.status(400).json({ error: 'Price ID is required' });
@@ -654,7 +654,7 @@ app.post('/api/payment/create-checkout', authenticate, async (req, res) => {
             return res.status(400).json({ error: `Payment type must be one of: ${validPaymentTypes.join(", ")}` });
         }
 
-        const session = await createCheckoutSession(req.clerkId, priceId, mode, paymentType);
+        const session = await createCheckoutSession(req.clerkId, priceId, mode, paymentType, returnTo);
         res.json({ sessionId: session.id, url: session.url });
     } catch (error) {
         console.error('Checkout error:', error);

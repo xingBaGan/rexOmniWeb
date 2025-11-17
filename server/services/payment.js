@@ -6,8 +6,9 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
  * @param {string} priceId - Stripe Price ID
  * @param {string} mode - Payment mode: "subscription" or "payment"
  * @param {string} paymentType - Payment type: "card", "alipay", "wechat_pay", "usdc", or "all"
+ * @param {string} returnTo - Return path after payment cancel (default: "/")
  */
-const createCheckoutSession = async (userId, priceId, mode = "subscription", paymentType = "card") => {
+const createCheckoutSession = async (userId, priceId, mode = "subscription", paymentType = "card", returnTo = "/") => {
     try {
         // Determine payment methods based on mode and payment type
         // Note: Subscriptions only support card payment
@@ -43,7 +44,7 @@ const createCheckoutSession = async (userId, priceId, mode = "subscription", pay
                 },
             ],
             success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
+            cancel_url: `${process.env.FRONTEND_URL}/payment/cancel?return_to=${encodeURIComponent(returnTo)}`,
             client_reference_id: userId.toString(),
             metadata: {
                 userId: userId.toString(),

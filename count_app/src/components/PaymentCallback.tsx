@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
+import { useLocation } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
@@ -12,6 +13,7 @@ type PaymentCallbackProps = {
 
 export function PaymentCallback({ onComplete }: PaymentCallbackProps) {
   const { getToken, isSignedIn } = useAuth();
+  const location = useLocation();
   const [status, setStatus] = useState<"loading" | "success" | "canceled" | "error">("loading");
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export function PaymentCallback({ onComplete }: PaymentCallbackProps) {
       const sessionId = urlParams.get("session_id");
 
       // Check if canceled
-      if (window.location.hash.includes("cancel") || window.location.pathname.includes("cancel")) {
+      if (window.location.hash.includes("cancel") || location.pathname.includes("cancel")) {
         setStatus("canceled");
         return;
       }
@@ -61,7 +63,7 @@ export function PaymentCallback({ onComplete }: PaymentCallbackProps) {
     };
 
     handleCallback();
-  }, [isSignedIn, getToken, onComplete]);
+  }, [isSignedIn, getToken, onComplete, location.pathname]);
 
   return (
     <div className="min-h-screen bg-[#121212] flex items-center justify-center p-4">

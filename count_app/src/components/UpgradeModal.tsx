@@ -17,9 +17,10 @@ type UpgradeModalProps = {
   open: boolean;
   onClose: () => void;
   onUpgrade: () => void;
+  returnTo?: string;
 };
 
-export function UpgradeModal({ open, onClose, onUpgrade }: UpgradeModalProps) {
+export function UpgradeModal({ open, onClose, onUpgrade, returnTo = "/" }: UpgradeModalProps) {
   const { getToken } = useAuth();
   const [loading, setLoading] = useState<string | null>(null);
 
@@ -57,6 +58,7 @@ export function UpgradeModal({ open, onClose, onUpgrade }: UpgradeModalProps) {
         priceId,
         mode,
         paymentType,
+        returnTo,
       });
       
       if (url) {

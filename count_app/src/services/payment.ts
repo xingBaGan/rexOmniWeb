@@ -4,6 +4,7 @@ export interface CreateCheckoutParams {
   priceId: string;
   mode?: "subscription" | "payment";
   paymentType?: "card" | "alipay" | "wechat_pay" | "usdc" | "all";
+  returnTo?: string;
 }
 
 /**
@@ -22,6 +23,7 @@ export const createCheckoutSession = async (
         priceId: params.priceId,
         mode: params.mode || "subscription",
         paymentType: params.paymentType || "card",
+        returnTo: params.returnTo || "/",
       };
 
   const response = await fetch(`${API_BASE_URL}/api/payment/create-checkout`, {
