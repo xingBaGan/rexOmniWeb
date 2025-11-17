@@ -132,11 +132,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 });
 const backendUrl = process.env.BACKEND_URL;
 
-// Validate backend URL format
-if (backendUrl && !backendUrl.startsWith('http')) {
-    console.warn('Warning: BACKEND_URL should start with http:// or https://');
-}
-
 // Health check endpoint for backend connectivity
 app.get('/health', async (req, res) => {
     if (!backendUrl) {
