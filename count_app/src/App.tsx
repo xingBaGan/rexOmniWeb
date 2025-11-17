@@ -7,6 +7,7 @@ import { HistoryPage } from "./components/HistoryPage";
 import { AuthPage } from "./components/AuthPage";
 import { PaymentCallback } from "./components/PaymentCallback";
 import { UserProfilePage } from "./components/UserProfilePage";
+import { UpgradeModal } from "./components/UpgradeModal";
 import { Toaster } from "./components/ui/sonner";
 import { getCurrentUser, updateDailyCount } from "./services/auth";
 import { getGuestSession, getGuestDailyCount, updateGuestDailyCount } from "./services/guest";
@@ -42,17 +43,33 @@ export default function App() {
   const [userTier, setUserTier] = useState<UserTier>("free");
   const [dailyCount, setDailyCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const freeLimit = 5;
+
+  // Initialize guest session immediately on mount (before Clerk loads)
+  useEffect(() => {
+    const initGuestSession = async () => {
+      // Try to create guest session immediately, don't wait for Clerk
+      try {
+        await getGuestSession();
+      } catch (error) {
+        console.error("Failed to initialize guest session:", error);
+      }
+    };
+    
+    initGuestSession();
+  }, []); // Run once on mount
 
   // Load user data from backend
   useEffect(() => {
     const loadUserData = async () => {
+      // Wait for Clerk to load before checking auth status
       if (!isLoaded) {
         return;
       }
 
       if (!isSignedIn) {
-        // For guest users, load from backend
+        // For guest users, ensure session exists and load data
         try {
           const { dailyCount: count } = await getGuestSession();
           setDailyCount(count);
@@ -169,6 +186,11 @@ export default function App() {
         setUserTier(userData.tier);
         setDailyCount(userData.dailyCount || 0);
         setCurrentPage("home");
+        
+        // If user is free tier, show upgrade modal
+        if (userData.tier === "free") {
+          setShowUpgradeModal(true);
+        }
       }
     } catch (error) {
       console.error("Failed to load user data after login:", error);
@@ -266,6 +288,11 @@ export default function App() {
       {currentPage === "profile" && (
         <UserProfilePage onBack={() => setCurrentPage("home")} />
       )}
+      <UpgradeModal
+        open={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        onUpgrade={handleUpgrade}
+      />
       <Toaster theme="dark" />
     </div>
   );

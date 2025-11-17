@@ -76,6 +76,12 @@ export function HomePage({ onImageUpload, onNavigateHistory, onNavigateAuth, onN
 
     // Check if user can upload
     if (userTier !== 'pro' && dailyCount >= freeLimit) {
+      // If guest user reaches limit, redirect to login
+      if (!isSignedIn) {
+        onNavigateAuth();
+        return;
+      }
+      // If signed-in user reaches limit, they should upgrade
       return;
     }
 
@@ -96,6 +102,16 @@ export function HomePage({ onImageUpload, onNavigateHistory, onNavigateAuth, onN
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleUploadClick = () => {
+    // If guest user reaches limit, redirect to login
+    if (!isSignedIn && userTier === 'free' && dailyCount >= freeLimit) {
+      onNavigateAuth();
+      return;
+    }
+    // Otherwise, trigger file input
+    fileInputRef.current?.click();
   };
 
   const canUpload = userTier === 'pro' || dailyCount < freeLimit;
@@ -186,16 +202,16 @@ export function HomePage({ onImageUpload, onNavigateHistory, onNavigateAuth, onN
               accept="image/*"
               onChange={handleFileSelect}
               className="hidden"
-              disabled={!canUpload}
+              disabled={!canUpload && isSignedIn}
             />
             <Button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!canUpload || uploading}
+              onClick={handleUploadClick}
+              disabled={uploading || (canUpload === false && isSignedIn)}
               size="lg"
               className="bg-[#4D8FFF] hover:bg-[#3D7FEF] text-white h-14 px-12 rounded-xl"
             >
               <Upload className="w-5 h-5 mr-2" />
-              {uploading ? 'Uploading...' : 'Upload Image'}
+              {uploading ? 'Uploading...' : (!isSignedIn && !canUpload ? 'Sign In to Continue' : 'Upload Image')}
             </Button>
           </div>
 

@@ -1,14 +1,14 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
-import { getGuestHeaders } from "../utils/session";
+import { getGuestHeaders, setGuestToken } from "../utils/session";
 
 /**
  * Get or create guest session
  */
 export const getGuestSession = async (): Promise<{
   sessionId: string;
+  token?: string;
   dailyCount: number;
 }> => {
-  const sessionId = getGuestSessionId();
   const response = await fetch(`${API_BASE_URL}/api/guest/session`, {
     headers: getGuestHeaders(),
   });
@@ -17,14 +17,20 @@ export const getGuestSession = async (): Promise<{
     throw new Error("Failed to get guest session");
   }
 
-  return response.json();
+  const data = await response.json();
+  
+  // Store token if received (pseudo-login)
+  if (data.token) {
+    setGuestToken(data.token);
+  }
+  
+  return data;
 };
 
 /**
  * Get guest daily count
  */
 export const getGuestDailyCount = async (): Promise<number> => {
-  const sessionId = getGuestSessionId();
   const response = await fetch(`${API_BASE_URL}/api/guest/count`, {
     headers: getGuestHeaders(),
   });

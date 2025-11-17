@@ -7,6 +7,12 @@ const guestSchema = new mongoose.Schema({
         unique: true,
         index: true,
     },
+    token: {
+        type: String,
+        unique: true,
+        index: true,
+        sparse: true,
+    },
     dailyCount: {
         type: Number,
         default: 0,
@@ -25,18 +31,68 @@ guestSchema.index({ sessionId: 1 });
 const Guest = mongoose.model("Guest", guestSchema);
 
 /**
+ * Generate guest token
+ */
+const generateGuestToken = () => {
+    const crypto = require('crypto');
+    return `guest_${crypto.randomBytes(32).toString('hex')}`;
+};
+
+/**
  * Find or create guest by session ID
+ * Uses findOneAndUpdate with upsert to handle concurrent requests safely
  */
 const findOrCreateGuest = async (sessionId) => {
-    let guest = await Guest.findOne({ sessionId });
-    if (!guest) {
-        guest = new Guest({
-            sessionId,
-            dailyCount: 0,
-        });
-        await guest.save();
+    try {
+        // Use findOneAndUpdate with upsert to atomically find or create
+        // This prevents race conditions when multiple requests try to create the same guest
+        const token = generateGuestToken();
+        let guest = await Guest.findOneAndUpdate(
+            { sessionId },
+            {
+                $setOnInsert: {
+                    sessionId,
+                    token,
+                    dailyCount: 0,
+                }
+            },
+            {
+                upsert: true,
+                new: true,
+                setDefaultsOnInsert: true
+            }
+        );
+        
+        // If guest already existed but doesn't have a token, update it
+        if (guest && !guest.token) {
+            guest.token = token;
+            await guest.save();
+        }
+        
+        return guest;
+    } catch (error) {
+        // Handle duplicate key error (race condition)
+        if (error.code === 11000) {
+            // Another request created the guest, just find it
+            const guest = await Guest.findOne({ sessionId });
+            if (guest) {
+                // Ensure token exists
+                if (!guest.token) {
+                    guest.token = generateGuestToken();
+                    await guest.save();
+                }
+                return guest;
+            }
+        }
+        throw error;
     }
-    return guest;
+};
+
+/**
+ * Find guest by token
+ */
+const findGuestByToken = async (token) => {
+    return await Guest.findOne({ token });
 };
 
 /**
@@ -94,6 +150,7 @@ const deleteGuest = async (sessionId) => {
 module.exports = {
     Guest,
     findOrCreateGuest,
+    findGuestByToken,
     updateGuestDailyCount,
     getGuestDailyCount,
     getGuestData,

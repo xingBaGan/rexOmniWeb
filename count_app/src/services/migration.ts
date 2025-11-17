@@ -1,5 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
-import { getGuestSessionId } from "../utils/session";
+import { getGuestSessionId, clearGuestToken } from "../utils/session";
 
 export interface MigrationResult {
   success: boolean;
@@ -30,9 +30,9 @@ export const migrateGuestToUser = async (token: string): Promise<MigrationResult
 
   const result = await response.json();
   
-  // Clear guest session ID after successful migration
+  // Clear guest session ID and token after successful migration
   if (result.success) {
-    localStorage.removeItem("guestSessionId");
+    clearGuestToken();
   }
   
   return result;

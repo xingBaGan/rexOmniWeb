@@ -12,13 +12,45 @@ export const getGuestSessionId = (): string => {
 };
 
 /**
- * Get headers with session ID for guest requests
+ * Get guest token (pseudo-login token)
+ */
+export const getGuestToken = (): string | null => {
+  return localStorage.getItem("guestToken");
+};
+
+/**
+ * Set guest token
+ */
+export const setGuestToken = (token: string): void => {
+  localStorage.setItem("guestToken", token);
+};
+
+/**
+ * Clear guest token
+ */
+export const clearGuestToken = (): void => {
+  localStorage.removeItem("guestToken");
+  localStorage.removeItem("guestSessionId");
+};
+
+/**
+ * Get headers with token or session ID for guest requests
  */
 export const getGuestHeaders = (): HeadersInit => {
-  const sessionId = getGuestSessionId();
-  return {
+  const token = getGuestToken();
+  const headers: HeadersInit = {
     "Content-Type": "application/json",
-    "x-session-id": sessionId,
   };
+  
+  if (token) {
+    // Use token for pseudo-login (preferred)
+    headers["Authorization"] = `Bearer ${token}`;
+  } else {
+    // Fallback to session ID
+    const sessionId = getGuestSessionId();
+    headers["x-session-id"] = sessionId;
+  }
+  
+  return headers;
 };
 

@@ -15,8 +15,9 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const connectDB = require('./config/database');
 const { findOrCreateUser, findUserByClerkId, updateSubscription, updateDailyCount, getDailyCount, mergeGuestDailyCount } = require('./models/user');
 const { saveHistory, getUserHistory, deleteHistory, migrateGuestHistoryToUser } = require('./models/history');
-const { findOrCreateGuest, updateGuestDailyCount, getGuestDailyCount, getGuestData, deleteGuest } = require('./models/guest');
+const { findOrCreateGuest, findGuestByToken, updateGuestDailyCount, getGuestDailyCount, getGuestData, deleteGuest } = require('./models/guest');
 const { authenticate } = require('./middleware/auth');
+const { optionalGuestAuth } = require('./middleware/guestAuth');
 const { createCheckoutSession, getSubscription, cancelSubscription } = require('./services/payment');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
@@ -29,7 +30,7 @@ app.use(express.static(path.join(__dirname, '..')));
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-id');
     if (req.method === 'OPTIONS') {
         return res.sendStatus(200);
     }
@@ -352,16 +353,40 @@ app.post('/api/user/update-count', authenticate, async (req, res) => {
 // Get or create guest session
 app.get('/api/guest/session', async (req, res) => {
     try {
+        // Try to get guest by token first (pseudo-login)
+        const authHeader = req.headers.authorization;
+        let guest = null;
         let sessionId = req.headers['x-session-id'];
-        if (!sessionId) {
-            // Generate new session ID
-            sessionId = require('crypto').randomUUID();
+        
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.replace('Bearer ', '');
+            if (token.startsWith('guest_')) {
+                guest = await findGuestByToken(token);
+                // If token exists but guest not found, create new guest
+                if (!guest) {
+                    // Token is invalid, create new guest with new session ID
+                    if (!sessionId) {
+                        sessionId = require('crypto').randomUUID();
+                    }
+                    guest = await findOrCreateGuest(sessionId);
+                }
+            }
         }
-        const guest = await findOrCreateGuest(sessionId);
-        const dailyCount = await getGuestDailyCount(sessionId);
+        
+        // If no valid token or guest, try session ID
+        if (!guest) {
+            if (!sessionId) {
+                // Generate new session ID
+                sessionId = require('crypto').randomUUID();
+            }
+            guest = await findOrCreateGuest(sessionId);
+        }
+        
+        const dailyCount = await getGuestDailyCount(guest.sessionId);
         
         res.json({ 
-            sessionId,
+            sessionId: guest.sessionId,
+            token: guest.token,
             dailyCount,
         });
     } catch (error) {
@@ -371,11 +396,11 @@ app.get('/api/guest/session', async (req, res) => {
 });
 
 // Update guest daily count
-app.post('/api/guest/update-count', async (req, res) => {
+app.post('/api/guest/update-count', optionalGuestAuth, async (req, res) => {
     try {
-        const sessionId = req.headers['x-session-id'];
+        const sessionId = req.guestSessionId || req.headers['x-session-id'];
         if (!sessionId) {
-            return res.status(400).json({ error: 'Session ID required' });
+            return res.status(400).json({ error: 'Session ID or token required' });
         }
         
         const guest = await updateGuestDailyCount(sessionId);
@@ -389,9 +414,9 @@ app.post('/api/guest/update-count', async (req, res) => {
 });
 
 // Get guest daily count
-app.get('/api/guest/count', async (req, res) => {
+app.get('/api/guest/count', optionalGuestAuth, async (req, res) => {
     try {
-        const sessionId = req.headers['x-session-id'];
+        const sessionId = req.guestSessionId || req.headers['x-session-id'];
         if (!sessionId) {
             return res.json({ dailyCount: 0 });
         }
@@ -434,11 +459,11 @@ app.post('/api/history', authenticate, async (req, res) => {
 });
 
 // Save history (guest user)
-app.post('/api/history/guest', async (req, res) => {
+app.post('/api/history/guest', optionalGuestAuth, async (req, res) => {
     try {
-        const sessionId = req.headers['x-session-id'];
+        const sessionId = req.guestSessionId || req.headers['x-session-id'];
         if (!sessionId) {
-            return res.status(400).json({ error: 'Session ID required' });
+            return res.status(400).json({ error: 'Session ID or token required' });
         }
         
         const { imageUrl, timestamp, totalCount, categories, objects } = req.body;
@@ -489,9 +514,9 @@ app.get('/api/history', authenticate, async (req, res) => {
 });
 
 // Get history (guest user)
-app.get('/api/history/guest', async (req, res) => {
+app.get('/api/history/guest', optionalGuestAuth, async (req, res) => {
     try {
-        const sessionId = req.headers['x-session-id'];
+        const sessionId = req.guestSessionId || req.headers['x-session-id'];
         if (!sessionId) {
             return res.json([]);
         }
@@ -534,11 +559,11 @@ app.delete('/api/history/:id', authenticate, async (req, res) => {
 });
 
 // Delete history (guest user)
-app.delete('/api/history/guest/:id', async (req, res) => {
+app.delete('/api/history/guest/:id', optionalGuestAuth, async (req, res) => {
     try {
-        const sessionId = req.headers['x-session-id'];
+        const sessionId = req.guestSessionId || req.headers['x-session-id'];
         if (!sessionId) {
-            return res.status(400).json({ error: 'Session ID required' });
+            return res.status(400).json({ error: 'Session ID or token required' });
         }
         
         const { id } = req.params;
