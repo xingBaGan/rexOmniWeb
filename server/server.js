@@ -24,13 +24,17 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const upload = multer({ dest: path.join(__dirname, '../uploads/') });
 
-// Serve static files from the root directory
-app.use(express.static(path.join(__dirname, "..")));
+const defaultStaticDir = path.join(__dirname, "..");
 const distDir = path.join(__dirname, "../count_app/build");
 const hasFrontendBuild = fs.existsSync(distDir);
+const staticOptions = hasFrontendBuild ? { index: false } : undefined;
+app.use(express.static(defaultStaticDir, staticOptions));
 if (hasFrontendBuild) {
     app.use(express.static(distDir));
 }
+const fallbackIndexPath = hasFrontendBuild
+    ? path.join(distDir, "index.html")
+    : path.join(defaultStaticDir, "index.html");
 // Enable CORS for count app
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -766,13 +770,20 @@ app.post('/api/webhooks/clerk', express.json(), async (req, res) => {
     }
 });
 
+const skipPaths = ["/api", "/upload", "/predict", "/tagger", "/health", "/api/payment/webhook"];
 if (hasFrontendBuild) {
-    app.get("*", (req, res, next) => {
-        const skipPaths = ["/api", "/upload", "/predict", "/tagger", "/health", "/api/payment/webhook"];
+    app.use((req, res, next) => {
         if (skipPaths.some(prefix => req.path.startsWith(prefix))) {
             return next();
         }
-        return res.sendFile(path.join(distDir, "index.html"));
+        if (req.method !== "GET") {
+            return next();
+        }
+        return res.sendFile(fallbackIndexPath);
+    });
+} else {
+    app.get("/", (req, res) => {
+        return res.sendFile(fallbackIndexPath);
     });
 }
 
